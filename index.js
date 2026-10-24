@@ -16,7 +16,8 @@ export default {
 
     try {
       update = await request.json();
-    } catch {
+    } catch (error) {
+      console.error("Invalid webhook JSON:", error);
       return new Response("Invalid JSON", { status: 400 });
     }
 
@@ -27,7 +28,11 @@ export default {
     }
 
     const chatId = message.chat.id;
-    const command = message.text.trim().split(/\s+/)[0].split("@")[0].toLowerCase();
+    const command = message.text
+      .trim()
+      .split(/\s+/)[0]
+      .split("@")[0]
+      .toLowerCase();
 
     const commands = {
       "/gold": ["5min", "M5"],
@@ -62,7 +67,8 @@ export default {
         reply = await analyzeGold(env, ...commands[command]);
       } catch (error) {
         console.error("Analysis error:", error);
-        reply = "❌ دریافت یا تحلیل اطلاعات طلا ناموفق بود. کمی بعد دوباره تلاش کن.";
+        reply =
+          "❌ دریافت یا تحلیل اطلاعات طلا ناموفق بود. کمی بعد دوباره تلاش کن.";
       }
     } else {
       reply = "فرمان شناخته نشد. برای راهنما /help را بفرست.";
@@ -80,7 +86,7 @@ export default {
 
 async function analyzeGold(env, interval, label) {
   if (!env.TWELVE_DATA_API_KEY) {
-    return "کلید API دریافت اطلاعات طلا تنظیم نشده است.";
+    return "❌ کلید API دریافت اطلاعات طلا تنظیم نشده است.";
   }
 
   const url = new URL("https://api.twelvedata.com/time_series");
@@ -92,9 +98,14 @@ async function analyzeGold(env, interval, label) {
   const response = await fetch(url);
   const data = await response.json();
 
-  if (!response.ok || data.status === "error" || !data.values || data.values.length < 35) {
+  if (
+    !response.ok ||
+    data.status === "error" ||
+    !data.values ||
+    data.values.length < 35
+  ) {
     console.error("Twelve Data error:", data);
-    return "اطلاعات کافی از Twelve Data دریافت نشد. محدودیت API یا کمبود داده ممکن است علت باشد.";
+    return "❌ اطلاعات کافی دریافت نشد. محدودیت API یا کمبود داده ممکن است علت باشد.";
   }
 
   const candles = data.values.slice().reverse().map(c => ({
@@ -105,8 +116,14 @@ async function analyzeGold(env, interval, label) {
     close: Number(c.close)
   }));
 
-  if (candles.some(c => !Number.isFinite(c.close) || !Number.isFinite(c.high) || !Number.isFinite(c.low))) {
-    return "داده‌های دریافتی معتبر نیستند. کمی بعد دوباره تلاش کن.";
+  if (
+    candles.some(c =>
+      !Number.isFinite(c.close) ||
+      !Number.isFinite(c.high) ||
+      !Number.isFinite(c.low)
+    )
+  ) {
+    return "❌ داده‌های دریافتی معتبر نیستند. کمی بعد دوباره تلاش کن.";
   }
 
   const closes = candles.map(c => c.close);
@@ -132,15 +149,21 @@ async function analyzeGold(env, interval, label) {
   let scenario;
 
   if (trend === "صعودی" && rsi > 50 && macd.histogram > 0) {
-    scenario = "سناریوی صعودی: در صورت حفظ حمایت نزدیک و تأیید کندل، ادامه رشد محتمل است.";
+    scenario =
+      "سناریوی صعودی: در صورت حفظ حمایت نزدیک و تأیید کندل، ادامه رشد محتمل است.";
   } else if (trend === "نزولی" && rsi < 50 && macd.histogram < 0) {
-    scenario = "سناریوی نزولی: در صورت حفظ فشار فروش و شکست حمایت، افت بیشتر محتمل است.";
+    scenario =
+      "سناریوی نزولی: در صورت حفظ فشار فروش و شکست حمایت، افت بیشتر محتمل است.";
   } else {
-    scenario = "سناریوی خنثی/انتظار: برای جهت روشن‌تر، منتظر شکست معتبر حمایت یا مقاومت بمان.";
+    scenario =
+      "سناریوی خنثی/انتظار: برای جهت روشن‌تر، منتظر شکست معتبر حمایت یا مقاومت بمان.";
   }
 
   const change = last.close - previous.close;
-  const changePct = previous.close ? (change / previous.close) * 100 : 0;
+  const changePct = previous.close
+    ? (change / previous.close) * 100
+    : 0;
+
   const emoji = change > 0 ? "📈" : change < 0 ? "📉" : "➖";
 
   return (
@@ -177,14 +200,18 @@ function calculateRSI(closes, period = 14) {
 
   for (let i = period + 1; i < closes.length; i++) {
     const diff = closes[i] - closes[i - 1];
-    avgGain = (avgGain * (period - 1) + Math.max(diff, 0)) / period;
-    avgLoss = (avgLoss * (period - 1) + Math.max(-diff, 0)) / period;
+
+    avgGain =
+      (avgGain * (period - 1) + Math.max(diff, 0)) / period;
+
+    avgLoss =
+      (avgLoss * (period - 1) + Math.max(-diff, 0)) / period;
   }
 
   if (avgLoss === 0) return avgGain === 0 ? 50 : 100;
 
   const rs = avgGain / avgLoss;
-  return 100 - (100 / (1 + rs));
+  return 100 - 100 / (1 + rs);
 }
 
 function calculateEMA(values, period) {
@@ -203,6 +230,7 @@ function calculateEMA(values, period) {
 function calculateMACD(closes) {
   const ema12 = calculateEMA(closes, 12);
   const ema26 = calculateEMA(closes, 26);
+
   const macdLine = closes.map((_, i) => ema12[i] - ema26[i]);
   const signalLine = calculateEMA(macdLine, 9);
   const last = macdLine.length - 1;
@@ -229,6 +257,7 @@ function detectTrend(candles) {
 
   if (last > first && higherHighs && higherLows) return "صعودی";
   if (last < first && lowerHighs && lowerLows) return "نزولی";
+
   return "خنثی";
 }
 
@@ -242,20 +271,31 @@ function detectStructure(candles) {
   const firstLow = Math.min(...lows.slice(0, 6));
   const lastLow = Math.min(...lows.slice(6));
 
-  if (lastHigh > firstHigh && lastLow > firstLow) return "HH + HL (سقف و کف بالاتر)";
-  if (lastHigh < firstHigh && lastLow < firstLow) return "LH + LL (سقف و کف پایین‌تر)";
+  if (lastHigh > firstHigh && lastLow > firstLow) {
+    return "HH + HL (سقف و کف بالاتر)";
+  }
+
+  if (lastHigh < firstHigh && lastLow < firstLow) {
+    return "LH + LL (سقف و کف پایین‌تر)";
+  }
+
   return "ساختار ترکیبی یا در حال شکل‌گیری";
 }
 
 function findSupportResistance(candles) {
   const recent = candles.slice(-30);
   const price = recent[recent.length - 1].close;
+
   const supports = recent.map(c => c.low).filter(v => v < price);
   const resistances = recent.map(c => c.high).filter(v => v > price);
 
   return {
-    support: supports.length ? Math.max(...supports) : Math.min(...recent.map(c => c.low)),
-    resistance: resistances.length ? Math.min(...resistances) : Math.max(...recent.map(c => c.high))
+    support: supports.length
+      ? Math.max(...supports)
+      : Math.min(...recent.map(c => c.low)),
+    resistance: resistances.length
+      ? Math.min(...resistances)
+      : Math.max(...recent.map(c => c.high))
   };
 }
 
@@ -269,7 +309,7 @@ async function sendTelegram(token, chatId, text) {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       chat_id: chatId,
-      text: text
+      text
     })
   });
 
@@ -277,6 +317,9 @@ async function sendTelegram(token, chatId, text) {
 
   if (!response.ok || !result.ok) {
     console.error("Telegram API error:", response.status, result);
-    throw new Error(`Telegram API error: ${response.status} - ${result.description || "Unknown error"}`);
+
+    throw new Error(
+      `Telegram API error: ${response.status} - ${result.description || "Unknown error"}`
+    );
   }
 }
