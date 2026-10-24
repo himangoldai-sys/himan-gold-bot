@@ -21,6 +21,7 @@ export default {
     }
 
     const message = update.message;
+
     if (!message?.text || !message.chat?.id) {
       return new Response("OK");
     }
@@ -60,13 +61,19 @@ export default {
       try {
         reply = await analyzeGold(env, ...commands[command]);
       } catch (error) {
+        console.error("Analysis error:", error);
         reply = "❌ دریافت یا تحلیل اطلاعات طلا ناموفق بود. کمی بعد دوباره تلاش کن.";
       }
     } else {
       reply = "فرمان شناخته نشد. برای راهنما /help را بفرست.";
     }
 
-    await sendTelegram(env.BOT_TOKEN, chatId, reply);
+    try {
+      await sendTelegram(env.BOT_TOKEN, chatId, reply);
+    } catch (error) {
+      console.error("Send message error:", error);
+    }
+
     return new Response("OK");
   }
 };
@@ -86,10 +93,10 @@ async function analyzeGold(env, interval, label) {
   const data = await response.json();
 
   if (!response.ok || data.status === "error" || !data.values || data.values.length < 35) {
+    console.error("Twelve Data error:", data);
     return "اطلاعات کافی از Twelve Data دریافت نشد. محدودیت API یا کمبود داده ممکن است علت باشد.";
   }
 
-  // داده‌ها از جدید به قدیم هستند؛ برای محاسبات ترتیب را قدیم به جدید می‌کنیم.
   const candles = data.values.slice().reverse().map(c => ({
     time: c.datetime,
     open: Number(c.open),
@@ -97,6 +104,10 @@ async function analyzeGold(env, interval, label) {
     low: Number(c.low),
     close: Number(c.close)
   }));
+
+  if (candles.some(c => !Number.isFinite(c.close) || !Number.isFinite(c.high) || !Number.isFinite(c.low))) {
+    return "داده‌های دریافتی معتبر نیستند. کمی بعد دوباره تلاش کن.";
+  }
 
   const closes = candles.map(c => c.close);
   const last = candles[candles.length - 1];
@@ -119,6 +130,7 @@ async function analyzeGold(env, interval, label) {
   else if (macd.histogram < 0) macdText = "مومنتوم منفی";
 
   let scenario;
+
   if (trend === "صعودی" && rsi > 50 && macd.histogram > 0) {
     scenario = "سناریوی صعودی: در صورت حفظ حمایت نزدیک و تأیید کندل، ادامه رشد محتمل است.";
   } else if (trend === "نزولی" && rsi < 50 && macd.histogram < 0) {
@@ -146,7 +158,7 @@ async function analyzeGold(env, interval, label) {
     `خط سیگنال: ${macd.signal.toFixed(3)}\n` +
     `هیستوگرام: ${macd.histogram.toFixed(3)} — ${macdText}\n\n` +
     `🎯 سناریوی احتمالی:\n${scenario}\n\n` +
-    `⚠️ این تحلیل بر پایه کندل‌های دریافتی از Twelve Data است؛ تضمین‌کننده حرکت آینده یا سیگنال قطعی خریدوفروش نیست. قبل از معامله، قیمت و حد ضرر را در پلتفرم خودت بررسی کن.`
+    `⚠️ این تحلیل بر پایه داده‌های Twelve Data است و تضمینی برای حرکت آینده نیست. قبل از معامله، قیمت و حد ضرر را در پلتفرم خودت بررسی کن.`
   );
 }
 
@@ -165,13 +177,12 @@ function calculateRSI(closes, period = 14) {
 
   for (let i = period + 1; i < closes.length; i++) {
     const diff = closes[i] - closes[i - 1];
-    const gain = Math.max(diff, 0);
-    const loss = Math.max(-diff, 0);
-    avgGain = (avgGain * (period - 1) + gain) / period;
-    avgLoss = (avgLoss * (period - 1) + loss) / period;
+    avgGain = (avgGain * (period - 1) + Math.max(diff, 0)) / period;
+    avgLoss = (avgLoss * (period - 1) + Math.max(-diff, 0)) / period;
   }
 
   if (avgLoss === 0) return avgGain === 0 ? 50 : 100;
+
   const rs = avgGain / avgLoss;
   return 100 - (100 / (1 + rs));
 }
@@ -194,8 +205,8 @@ function calculateMACD(closes) {
   const ema26 = calculateEMA(closes, 26);
   const macdLine = closes.map((_, i) => ema12[i] - ema26[i]);
   const signalLine = calculateEMA(macdLine, 9);
-
   const last = macdLine.length - 1;
+
   return {
     macd: macdLine[last],
     signal: signalLine[last],
@@ -210,6 +221,7 @@ function detectTrend(candles) {
 
   const highs = recent.map(c => c.high);
   const lows = recent.map(c => c.low);
+
   const higherHighs = highs[highs.length - 1] > highs[0];
   const higherLows = lows[lows.length - 1] > lows[0];
   const lowerHighs = highs[highs.length - 1] < highs[0];
@@ -248,13 +260,23 @@ function findSupportResistance(candles) {
 }
 
 async function sendTelegram(token, chatId, text) {
+  if (!token) {
+    throw new Error("BOT_TOKEN is missing");
+  }
+
   const response = await fetch(`${API_BASE}/bot${token}/sendMessage`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ chat_id: chatId, text })
+    body: JSON.stringify({
+      chat_id: chatId,
+      text: text
+    })
   });
 
-  if (!response.ok) {
-    throw new Error("Telegram message failed");
+  const result = await response.json();
+
+  if (!response.ok || !result.ok) {
+    console.error("Telegram API error:", response.status, result);
+    throw new Error(`Telegram API error: ${response.status} - ${result.description || "Unknown error"}`);
   }
 }
