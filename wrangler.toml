@@ -1,4 +1,4 @@
-name = "himan-gold-bot"
+name = "himan-gold-worker"
 main = "index.js"
 compatibility_date = "2026-10-24"
 workers_dev = true
